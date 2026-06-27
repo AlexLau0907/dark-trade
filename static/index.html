@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灰马市场 - 财经数据</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --h-primary: #E85D04; --h-primary-dark: #C24B00;
+  --h-bg: #FDF5ED; --h-text: #2C1810;
+  --h-bar1: #E85D04; --h-bar2: #D4A574;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-serif; background: var(--h-bg); color: var(--h-text); height: 100vh; display: flex; flex-direction: column; }
+
+.header { background: #fff; box-shadow: 0 2px 8px rgba(196,120,40,.12); padding: 10px 20px; z-index: 100; }
+.header-inner { display: flex; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.header-center { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.logo { font-size: 18px; font-weight: 700; color: var(--h-primary); white-space: nowrap; }
+.board-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.board-filters label { display: flex; align-items: center; gap: 4px; padding: 5px 12px; border: 1px solid #D4A574; border-radius: 16px; font-size: 13px; cursor: pointer; user-select: none; transition: all .2s; background: #fff; color: #8B6F5F; }
+.board-filters label:hover { border-color: var(--h-primary); color: var(--h-primary); background: #FFF5EB; }
+.board-filters label.active { background: var(--h-primary); color: #fff; border-color: var(--h-primary); }
+.board-filters label.all-btn { border-color: var(--h-primary); color: var(--h-primary); font-weight: 600; }
+.board-filters label.all-btn.active { background: #D4A574; color: #fff; border-color: #D4A574; }
+.board-filters input { display: none; }
+
+.filter-divider { width: 1px; height: 24px; background: #D4A574; margin: 0 8px; flex-shrink: 0; }
+.sector-dropdown { position: relative; display: flex; align-items: center; gap: 4px; }
+.sector-trigger { padding: 8px 14px; border: 1px solid #D4A574; border-radius: 6px; font-size: 13px; cursor: pointer; background: #fff; color: #5D4037; white-space: nowrap; }
+.sector-trigger.open { border-color: var(--h-primary); }
+.sector-tags { display: flex; gap: 4px; flex-wrap: wrap; max-width: 400px; }
+.sector-tags .tag { display: flex; align-items: center; gap: 2px; padding: 2px 10px; background: #FFF5EB; border: 1px solid #E8D5C0; border-radius: 12px; font-size: 11px; color: #8B6F5F; }
+.sector-tags .tag .remove { cursor: pointer; font-size: 14px; color: #D4A574; margin-left: 2px; }
+.sector-tags .tag .remove:hover { color: var(--h-primary); }
+
+.sector-panel { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff; border: 1px solid #E8D5C0; border-radius: 8px; box-shadow: 0 4px 16px rgba(196,120,40,.15); z-index: 300; min-width: 520px; max-height: 420px; overflow: hidden; }
+.sector-panel.show { display: flex; flex-direction: column; }
+.panel-search { padding: 8px 12px 0; }
+.panel-search input { width: 100%; padding: 6px 10px; border: 1px solid #E8D5C0; border-radius: 6px; font-size: 12px; outline: none; }
+.panel-search input:focus { border-color: var(--h-primary); }
+.sector-panel .panel-body { display: flex; flex-wrap: wrap; gap: 4px; padding: 12px; overflow-y: auto; max-height: 340px; }
+.sector-panel .panel-body label { display: flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid #E8D5C0; border-radius: 14px; font-size: 12px; cursor: pointer; user-select: none; transition: all .15s; white-space: nowrap; }
+.sector-panel .panel-body label:hover { border-color: var(--h-primary); background: #FFF5EB; }
+.sector-panel .panel-body label.active { background: var(--h-primary); color: #fff; border-color: var(--h-primary); }
+.sector-panel .panel-body input { display: none; }
+.sector-panel .panel-foot { padding: 10px 12px; border-top: 1px solid #F0E0D0; display: flex; gap: 8px; justify-content: flex-end; background: #FFFAF5; border-radius: 0 0 8px 8px; }
+.sector-panel .panel-foot button { padding: 5px 16px; border-radius: 5px; font-size: 12px; cursor: pointer; font-weight: 600; border: none; }
+.btn-ok { background: var(--h-primary); color: #fff; }
+.btn-ok:hover { background: var(--h-primary-dark); }
+.btn-clear { background: #fff; color: #8B6F5F; border: 1px solid #D4A574; }
+.btn-clear:hover { background: #F0E0D0; }
+
+.btn-export { padding: 7px 16px; background: var(--h-primary); color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn-export:hover { background: var(--h-primary-dark); }
+.search-box { position: relative; flex: 1; max-width: 420px; }
+.search-box input { width: 100%; padding: 8px 14px; border: 1px solid #D4A574; border-radius: 8px; font-size: 14px; outline: none; background: #FFFAF5; }
+.search-box input:focus { border-color: var(--h-primary); box-shadow: 0 0 0 2px rgba(232,93,4,.15); }
+.search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #E8D5C0; border-radius: 8px; box-shadow: 0 4px 16px rgba(196,120,40,.15); max-height: 360px; overflow-y: auto; z-index: 200; display: none; }
+.search-dropdown.show { display: block; }
+.search-dropdown .item { padding: 8px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #FFF0E0; display: flex; justify-content: space-between; align-items: center; }
+.search-dropdown .item:hover, .search-dropdown .item.active { background: #FFF5EB; }
+.search-dropdown .item .code { font-weight: 600; color: var(--h-primary); margin-right: 10px; }
+.search-dropdown .item .name { flex: 1; }
+.search-dropdown .item .board { font-size: 11px; color: #B08B6F; }
+.no-result { padding: 16px; text-align: center; color: #B08B6F; font-size: 13px; }
+.stock-count { font-size: 12px; color: #B08B6F; white-space: nowrap; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+.panel-left { width: 540px; min-width: 460px; background: #fff; border-right: 1px solid #E8D5C0; display: flex; flex-direction: column; }
+.panel-left .title-bar { padding: 10px 16px; font-size: 12px; font-weight: 600; color: #8B6F5F; border-bottom: 1px solid #F0E0D0; background: #FFFAF5; display: flex; align-items: center; }
+.title-bar .scode { width: 85px; cursor: pointer; user-select: none; padding: 2px 4px; border-radius: 3px; }
+.title-bar .scode:hover { background: #F0E0D0; }
+.title-bar .sname { flex: 1; cursor: pointer; user-select: none; padding: 2px 4px; border-radius: 3px; }
+.title-bar .sname:hover { background: #F0E0D0; }
+.title-bar .sflow { width: 78px; text-align: right; cursor: pointer; user-select: none; padding: 2px 4px; border-radius: 3px; }
+.title-bar .sflow:hover { background: #F0E0D0; }
+.title-bar .sflow.sorted { color: var(--h-primary); font-weight: 700; }
+.stock-list { flex: 1; overflow-y: auto; }
+.stock-list .row { display: flex; align-items: center; padding: 9px 16px; cursor: pointer; border-bottom: 1px solid #FFF0E0; font-size: 13px; }
+.stock-list .row:hover { background: #FFFAF5; }
+.stock-list .row.selected { background: #FFF5EB; border-left: 3px solid var(--h-primary); }
+.stock-list .row .scode { font-weight: 600; color: var(--h-primary); width: 85px; }
+.stock-list .row .sname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-list .row .sflow { width: 78px; text-align: right; font-weight: 500; font-size: 12px; color: #444; }
+.stock-list .row .sflow.pos { color: #E85D04; }
+.stock-list .row .sflow.neg { color: #2E7D32; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 8px; border-top: 1px solid #F0E0D0; background: #FFFAF5; position: sticky; bottom: 0; }
+.pager button { width: 28px; height: 28px; border: 1px solid #D4A574; border-radius: 4px; background: #fff; color: var(--h-primary); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all .15s; }
+.pager button:hover:not(:disabled) { background: var(--h-primary); color: #fff; }
+.pager button:disabled { opacity: .3; cursor: default; }
+.pager span { font-size: 12px; color: #8B6F5F; min-width: 60px; text-align: center; }
+
+.panel-right { flex: 1; display: flex; flex-direction: column; background: #fff; margin: 12px 12px 12px 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(196,120,40,.08); overflow: hidden; }
+.panel-right .chart-header { padding: 10px 20px; border-bottom: 1px solid #F0E0D0; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.panel-right .chart-header .stock-title { font-size: 16px; font-weight: 700; color: var(--h-primary-dark); }
+.panel-right .chart-header .stock-meta { font-size: 12px; color: #B08B6F; }
+.sector-link { color: var(--h-primary); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.sector-link:hover { opacity: .7; }
+
+.charts-stack { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.chart-section { flex: 1; display: flex; flex-direction: column; border-bottom: 1px solid #F0E0D0; min-height: 0; }
+.chart-section:last-child { border-bottom: none; }
+.chart-resizer { height: 14px; background: #FAF5F0; cursor: ns-resize; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin: -5px 0; z-index: 10; border-top: 1px solid #F0E0D0; border-bottom: 1px solid #F0E0D0; }
+.chart-resizer::after { content: ''; width: 50px; height: 4px; background: #D4A574; border-radius: 2px; transition: all .15s; }
+.chart-resizer:hover, .chart-resizer.active { background: #FFF0E0; }
+.chart-resizer:hover::after, .chart-resizer.active::after { background: var(--h-primary); width: 70px; }
+.chart-section-title { font-size: 11px; font-weight: 600; color: #8B6F5F; padding: 5px 20px 0; flex-shrink: 0; }
+.chart-section-body { flex: 1; padding: 2px 16px 6px; position: relative; min-height: 0; }
+.chart-section-body canvas, .chart-section-body > div { width: 100% !important; height: 100% !important; }
+.chart-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,.7); z-index: 10; }
+.chart-loading.show { display: flex; }
+.chart-loading .spinner { width: 32px; height: 32px; border: 3px solid #F0E0D0; border-top-color: var(--h-primary); border-radius: 50%; animation: spin .8s linear infinite; margin-right: 12px; }
+.chart-loading .text { font-size: 13px; color: #8B6F5F; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.margin-section { flex: 0 0 auto !important; }
+.margin-metrics { display: flex; gap: 12px; padding: 6px 20px 10px; flex-wrap: wrap; }
+.metric-card { background: #FFFAF5; border: 1px solid #F0E0D0; border-radius: 8px; padding: 7px 16px; min-width: 100px; display: flex; flex-direction: column; gap: 1px; }
+.metric-card .metric-label { font-size: 10px; color: #8B6F5F; }
+.metric-card .metric-value { font-size: 15px; font-weight: 700; color: #5D4037; }
+
+.legend { display: flex; gap: 16px; font-size: 11px; color: #8B6F5F; padding: 0 20px 6px; flex-wrap: wrap; }
+.legend span { display: flex; align-items: center; gap: 5px; }
+.legend .dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend .line-dot { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+@media (max-width: 768px) { .main { flex-direction: column; } .panel-left { width: 100%; min-width: 0; max-height: 40%; } .panel-right { margin: 8px; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-left">
+      <span class="logo">🐴 灰马市场</span>
+      <div class="board-filters" id="boardFilters">
+        <label class="all-btn" data-board="__all__"><input type="checkbox">全选</label>
+        <label data-board="上海主板"><input type="checkbox">上海主板</label>
+        <label data-board="深圳主板"><input type="checkbox">深圳主板</label>
+        <label data-board="中小板"><input type="checkbox">中小板</label>
+        <label data-board="科创板"><input type="checkbox">科创板</label>
+        <label data-board="创业板"><input type="checkbox">创业板</label>
+        <label data-board="其他"><input type="checkbox">其他</label>
+      </div>
+      <span class="filter-divider"></span>
+      <div class="sector-dropdown" id="sectorDropdown">
+        <div class="trigger sector-trigger" id="sectorTrigger" onclick="toggleSectorPanel()">全部概念 ▾</div>
+        <div class="sector-tags" id="sectorTags"></div>
+        <div class="sector-panel" id="sectorPanel">
+          <div class="panel-search"><input type="text" id="sectorSearch" placeholder="搜索概念..." oninput="filterSectorCheckboxes()"></div>
+          <div class="panel-body" id="sectorCheckboxes"></div>
+          <div class="panel-foot">
+            <button class="btn-clear" onclick="clearSectors()">清除</button>
+            <button class="btn-ok" onclick="applySectors()">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="header-center">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="搜索代码 / 名称 / 拼音首字母..." autocomplete="off">
+        <div class="search-dropdown" id="searchDropdown"></div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn-export" onclick="exportToExcel()">📥 导出</button>
+      <span class="stock-count" id="stockCount"></span>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="panel-left">
+    <div class="title-bar" id="titleBar">
+      <span class="scode" data-sort="stock_code">股票代码</span>
+      <span class="sname" data-sort="stock_name">股票名称</span>
+      <span class="sflow sorted" data-sort="sum_20d">20日累计 ▼</span>
+      <span class="sflow" data-sort="sum_10d">10日累计</span>
+      <span class="sflow" data-sort="sum_5d">5日累计</span>
+    </div>
+    <div class="stock-list" id="stockList"></div>
+  </div>
+
+  <div class="panel-right">
+    <div class="chart-header">
+      <div>
+        <span class="stock-title" id="chartTitle">请选择一只股票</span>
+        <span class="stock-meta">
+          <span class="sector-link" id="chartSector" onclick="selectSectorFromChart()" title="点击筛选该概念"></span>
+          <span id="chartBoard"></span>
+        </span>
+      </div>
+    </div>
+    <div class="charts-stack" id="chartsStack">
+      <div class="chart-section" data-section="price">
+        <div class="chart-section-title">📈 价格走势</div>
+        <div class="chart-section-body"><div class="chart-loading" id="loadPrice"><div class="spinner"></div><span class="text">数据加载中...</span></div><div id="priceChartContainer" style="width:100%;height:100%;"></div></div>
+      </div>
+      <div class="chart-resizer" data-resize="price-flow"></div>
+      <div class="chart-section" data-section="flow">
+        <div class="chart-section-title">💰 资金流向</div>
+        <div class="chart-section-body"><div class="chart-loading" id="loadFlow"><div class="spinner"></div><span class="text">数据加载中...</span></div><canvas id="flowChartCanvas"></canvas></div>
+        <div class="legend" id="legend" style="display:none;">
+          <span><span class="dot" style="background:#E85D04;"></span>暗盘资金</span>
+          <span><span class="dot" style="background:#D4A574;"></span>主力净流入</span>
+          <span><span class="line-dot" style="background:#2196F3;"></span>5日累计</span>
+          <span><span class="line-dot" style="background:#4CAF50;"></span>10日累计</span>
+          <span><span class="line-dot" style="background:#E91E63;"></span>20日累计</span>
+        </div>
+      <div class="chart-resizer" data-resize="flow-margin"></div>
+      <div class="chart-section" data-section="margin" style="flex:0 0 auto;">
+        <div class="chart-section-title">📊 行情数据</div>
+        <div class="margin-metrics" id="marginMetrics">
+          <div class="metric-card"><span class="metric-label">最新价</span><span class="metric-value" id="mPrice">--</span></div>
+          <div class="metric-card"><span class="metric-label">涨跌幅</span><span class="metric-value" id="mChgPct">--</span></div>
+          <div class="metric-card"><span class="metric-label">换手率</span><span class="metric-value" id="mTurnover">--</span></div>
+          <div class="metric-card"><span class="metric-label">市盈率</span><span class="metric-value" id="mPE">--</span></div>
+          <div class="metric-card"><span class="metric-label">总市值</span><span class="metric-value" id="mTotalMv">--</span></div>
+          <div class="metric-card"><span class="metric-label">流通市值</span><span class="metric-value" id="mCircMv">--</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ====== State ======
+let allStocks=[], filteredStocks=[], selectedStock=null, sortField='sum_20d', sortOrder=-1, latestTradeDate='', currentPage=1, PAGE_SIZE=100;
+const BOARDS=['上海主板','深圳主板','中小板','科创板','创业板','其他'];
+let allSectors=[], selectedSectors=new Set();
+
+async function fetchLatestDate(){try{const r=await fetch('/api/v1/market/dates');const d=await r.json();if(d.length)latestTradeDate=d[0].trade_date;}catch(e){}}
+
+function exportToExcel(){
+  if(!filteredStocks.length){alert('empty');return;}
+  const data=filteredStocks.map(s=>({'股票代码':s.stock_code,'股票名称':s.stock_name,'板块':s.board_type,'概念':s.sector,'5日累计(亿)':s.sum_5d?(s.sum_5d/1e8).toFixed(2):'0.00','10日累计(亿)':s.sum_10d?(s.sum_10d/1e8).toFixed(2):'0.00','20日累计(亿)':s.sum_20d?(s.sum_20d/1e8).toFixed(2):'0.00'}));
+  const ws=XLSX.utils.json_to_sheet(data); ws['!cols']=[{wch:10},{wch:14},{wch:10},{wch:16},{wch:14},{wch:14},{wch:14}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'stocks');
+  XLSX.writeFile(wb,(latestTradeDate||'export')+'_graymarket.xlsx');
+}
+
+async function loadStocks(){
+  try{await fetchLatestDate();const r=await fetch('/api/v1/stocks/list');allStocks=await r.json();applyFilters();if(filteredStocks.length)selectStock(filteredStocks[0].stock_code);}
+  catch(e){document.getElementById('stockList').innerHTML='<div class="no-result">load error</div>';}
+}
+
+function getSelectedBoards(){
+  const l=document.querySelectorAll('#boardFilters label.active:not(.all-btn)');
+  if(!l.length)return BOARDS; return Array.from(l).map(x=>x.dataset.board);
+}
+
+function applyFilters(){
+  const boards=getSelectedBoards(), q=document.getElementById('searchInput').value.trim().toUpperCase();
+  filteredStocks=allStocks.filter(s=>{
+    if(!boards.includes(s.board_type))return false;
+    if(selectedSectors.size&&!selectedSectors.has(s.sector))return false;
+    if(!q)return true;
+    if(s.stock_code.includes(q))return true;
+    if(s.stock_name.includes(q))return true;
+    if(s.pinyin&&s.pinyin.toUpperCase().includes(q))return true;
+    if(s.pinyin&&s.pinyin.toUpperCase().replace(/\s/g,'').includes(q.replace(/\s/g,'')))return true;
+    return false;
+  });
+  filteredStocks=sortStocks(filteredStocks); currentPage=1; renderStockList(); updateSearchDropdown();
+  document.getElementById('stockCount').textContent='共 '+filteredStocks.length+' 只';
+}
+
+function formatFlow(v){if(v==null)return'--';const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'亿';if(a>=1e4)return(v/1e4).toFixed(1)+'万';return v.toFixed(0);}
+function flowClass(v){if(v==null)return'';return v>=0?' pos':' neg';}
+
+function sortStocks(stocks){
+  return [...stocks].sort((a,b)=>{
+    let va=a[sortField], vb=b[sortField];
+    if(sortField.startsWith('sum_'))return((va||0)-(vb||0))*sortOrder;
+    va=(va||'').toString(); vb=(vb||'').toString();
+    return va.localeCompare(vb,'zh-CN')*sortOrder;
+  });
+}
+
+function goPage(p){
+  const total=Math.ceil(filteredStocks.length/PAGE_SIZE);
+  currentPage=Math.max(1,Math.min(p,total));
+  renderStockList();
+}
+function renderStockList(){
+  const c=document.getElementById('stockList');
+  if(!filteredStocks.length){c.innerHTML='<div class="no-result">无匹配结果</div>';return;}
+  const total=Math.ceil(filteredStocks.length/PAGE_SIZE);
+  if(currentPage>total)currentPage=total;
+  const start=(currentPage-1)*PAGE_SIZE, items=filteredStocks.slice(start,start+PAGE_SIZE);
+  let h=items.map(s=>`<div class="row${selectedStock&&selectedStock.stock_code===s.stock_code?' selected':''}" data-code="${s.stock_code}" onclick="selectStock('${s.stock_code}')"><span class="scode">${s.stock_code}</span><span class="sname" title="${s.stock_name||''}">${s.stock_name||''}</span><span class="sflow${flowClass(s.sum_20d)}">${formatFlow(s.sum_20d)}</span><span class="sflow${flowClass(s.sum_10d)}">${formatFlow(s.sum_10d)}</span><span class="sflow${flowClass(s.sum_5d)}">${formatFlow(s.sum_5d)}</span></div>`).join('');
+  if(total>1){
+    h+=`<div class="pager"><button onclick="goPage(1)" ${currentPage===1?'disabled':''}>«</button><button onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button><span>${currentPage}/${total}</span><button onclick="goPage(${currentPage+1})" ${currentPage===total?'disabled':''}>›</button><button onclick="goPage(${total})" ${currentPage===total?'disabled':''}>»</button></div>`;
+  }
+  c.innerHTML=h;
+}
+
+function updateSearchDropdown(){
+  const dd=document.getElementById('searchDropdown'), q=document.getElementById('searchInput').value.trim().toUpperCase();
+  if(!q||!filteredStocks.length){dd.classList.remove('show');return;}
+  const top=filteredStocks.slice(0,12);
+  dd.innerHTML=top.map((s,i)=>`<div class="item${i===0?' active':''}" data-code="${s.stock_code}" onmousedown="selectStock('${s.stock_code}')"><span class="code">${s.stock_code}</span><span class="name">${s.stock_name||''}</span><span class="board">${s.board_type||''}</span></div>`).join('');
+  if(top.length<filteredStocks.length)dd.innerHTML+=`<div class="no-result">...${filteredStocks.length-top.length} more</div>`;
+  dd.classList.add('show');
+}
+
+async function selectStock(code){
+  selectedStock=filteredStocks.find(s=>s.stock_code===code)||allStocks.find(s=>s.stock_code===code);
+  if(!selectedStock)return;
+  document.getElementById('searchInput').value=''; document.getElementById('searchDropdown').classList.remove('show');
+  document.getElementById('chartTitle').textContent=selectedStock.stock_code+' '+((selectedStock.stock_name)||'');
+  const se=document.getElementById('chartSector'),be=document.getElementById('chartBoard');
+  if(se&&be){se.textContent=selectedStock.sector||'';be.textContent=selectedStock.sector?' · '+(selectedStock.board_type||''):(selectedStock.board_type||'');}
+  const row=document.querySelector('.row[data-code="'+code+'"]');
+  if(row)row.scrollIntoView({behavior:'smooth',block:'nearest'});
+  renderStockList(); loadCharts(code);
+}
+
+async function loadCharts(code){
+  ['loadPrice','loadFlow'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.add('show');});
+  try{
+    const [hR,kR,mR] = await Promise.all([fetch('/api/v1/stocks/'+code+'/history'),fetch('/api/v1/stocks/'+code+'/kline'),fetch('/api/v1/stocks/'+code+'/margin')]);
+    try{renderPriceChart(await kR.json());}catch(e){console.error('price:',e);}
+    document.getElementById('loadPrice').classList.remove('show');
+    try{renderFlowChart(await hR.json());}catch(e){console.error('flow:',e);}
+    document.getElementById('loadFlow').classList.remove('show');
+    try{renderMarginChart(await mR.json());}catch(e){console.error('margin:',e);}
+    document.getElementById('legend').style.display='flex';
+  }catch(e){console.error('fetch:',e);['loadPrice','loadFlow'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.remove('show');});}
+}
+let priceChart=null;
+function renderPriceChart(kl) {
+  const el = document.getElementById('priceChartContainer');
+  if (!el || !kl || !kl.length) return;
+  if (window._pc) { try { window._pc.remove(); } catch(e) {} }
+  el.innerHTML = '';
+  kl = kl.filter(k => k.date >= '2026-05-11');
+  if (!kl.length) return;
+  const w = el.clientWidth || 600;
+  const h = el.clientHeight || 300;
+  const cd = kl.map(k => ({ time: k.date, open: k.open, high: k.high, low: k.low, close: k.close }));
+  const vd = kl.map(k => ({ time: k.date, value: k.volume, color: k.close >= k.open ? 'rgba(232,93,4,0.5)' : 'rgba(33,150,243,0.5)' }));
+  const ch = LightweightCharts.createChart(el, { width: w, height: h,
+    layout: { background: { color: '#ffffff' }, textColor: '#333' },
+    grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+    crosshair: { mode: 1 },
+  });
+  const vs = ch.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+  vs.setData(vd);
+  ch.priceScale('').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  const cs = ch.addCandlestickSeries({ upColor: '#e63946', downColor: '#2196F3', borderUpColor: '#e63946', borderDownColor: '#2196F3', wickUpColor: '#e63946', wickDownColor: '#2196F3' });
+  cs.setData(cd);
+  cs.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.35 } });
+  ch.timeScale().fitContent();
+  window._pc = ch;
+}
+
+// ====== Flow Chart ======
+let flowChart=null;
+function calcRollingSum(d,days){const r=[];for(let i=0;i<d.length;i++){let s=0;for(let j=Math.max(0,i-days+1);j<=i;j++)s+=d[j];r.push(s);}return r;}
+function renderFlowChart(h){
+  const c=document.getElementById('flowChartCanvas'); if(!c)return; if(flowChart)flowChart.destroy(); if(!h||!h.length)return;
+  const dates=h.map(x=>x.trade_date),dp=h.map(x=>x.dark_pool_funds||0),mf=h.map(x=>x.main_net_inflow||0);
+  const s5=calcRollingSum(dp,5),s10=calcRollingSum(dp,10),s20=calcRollingSum(dp,20);
+  const fmt=v=>{const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'Y';if(a>=1e4)return(v/1e4).toFixed(1)+'W';return v.toFixed(0);};
+  const pl=typeof ChartDataLabels!=='undefined'?[ChartDataLabels]:[];
+  flowChart=new Chart(c.getContext('2d'),{type:'bar',plugins:pl,data:{labels:dates,datasets:[
+    {label:'dark',data:dp,backgroundColor:'rgba(232,93,4,.7)',borderColor:'#E85D04',borderWidth:1,borderRadius:3,order:2,datalabels:{display:false}},
+    {label:'main',data:mf,backgroundColor:'rgba(212,165,116,.6)',borderColor:'#D4A574',borderWidth:1,borderRadius:3,order:2,datalabels:{display:false}},
+    {label:'5d',data:s5,type:'line',borderColor:'#2196F3',borderWidth:2.5,pointRadius:3,pointHoverRadius:5,pointBackgroundColor:'#2196F3',tension:.3,fill:false,order:1,datalabels:{align:'top',anchor:'end',offset:3,color:'#2196F3',font:{size:12,weight:'bold'},formatter:v=>fmt(v)}},
+    {label:'10d',data:s10,type:'line',borderColor:'#4CAF50',borderWidth:2.5,pointRadius:3,pointHoverRadius:5,pointBackgroundColor:'#4CAF50',tension:.3,fill:false,order:1,datalabels:{align:'top',anchor:'end',offset:3,color:'#4CAF50',font:{size:12,weight:'bold'},formatter:v=>fmt(v)}},
+    {label:'20d',data:s20,type:'line',borderColor:'#E91E63',borderWidth:2.5,pointRadius:3,pointHoverRadius:5,pointBackgroundColor:'#E91E63',tension:.3,fill:false,order:1,datalabels:{align:'bottom',anchor:'end',offset:3,color:'#E91E63',font:{size:12,weight:'bold'},formatter:v=>fmt(v)}},
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmt(ctx.raw)}}},
+    scales:{x:{ticks:{maxTicksLimit:15,font:{size:10}},grid:{display:false}},y:{ticks:{font:{size:10},callback:v=>fmt(v)},grid:{color:'#F0E0D0'},afterFit:s=>{s.paddingTop=20;}}}}});
+}
+
+// ====== Market Data ======
+
+// ====== Events ======
+document.getElementById('searchInput').addEventListener('input',()=>applyFilters());
+document.getElementById('searchInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){if(filteredStocks.length){selectStock(filteredStocks[0].stock_code);e.target.blur();}}
+  else if(e.key==='Escape'){document.getElementById('searchDropdown').classList.remove('show');e.target.value='';applyFilters();}
+});
+document.addEventListener('click',e=>{if(!e.target.closest('.search-box'))document.getElementById('searchDropdown').classList.remove('show');});
+document.querySelector('.panel-right').addEventListener('wheel',e=>{
+  if(!filteredStocks.length)return;const idx=filteredStocks.findIndex(s=>selectedStock&&s.stock_code===selectedStock.stock_code);
+  if(idx===-1)return;const next=e.deltaY>0?Math.min(idx+1,filteredStocks.length-1):Math.max(idx-1,0);
+  if(next!==idx){e.preventDefault();selectStock(filteredStocks[next].stock_code);}
+},{passive:false});
+
+const HL={stock_code:'股票代码',stock_name:'股票名称',sum_5d:'5日累计',sum_10d:'10日累计',sum_20d:'20日累计'};
+document.querySelectorAll('.title-bar [data-sort]').forEach(h=>{h.addEventListener('dblclick',function(){
+  const f=this.dataset.sort;
+  if(sortField===f)sortOrder=-sortOrder;else{sortField=f;sortOrder=(f==='stock_code'||f==='stock_name')?1:-1;}
+  document.querySelectorAll('.title-bar [data-sort]').forEach(x=>{x.classList.remove('sorted');x.textContent=HL[x.dataset.sort]||x.textContent;});
+  this.classList.add('sorted');this.textContent=(HL[f]||this.textContent)+(sortOrder===-1?' ▼':' ▲');applyFilters();
+});});
+
+document.querySelectorAll('#boardFilters label').forEach(l=>{l.addEventListener('click',function(e){
+  e.preventDefault();
+  if(this.classList.contains('all-btn')){
+    if(this.classList.contains('active'))document.querySelectorAll('#boardFilters label').forEach(x=>x.classList.remove('active'));
+    else document.querySelectorAll('#boardFilters label').forEach(x=>x.classList.add('active'));
+  }else{
+    if(e.ctrlKey||e.metaKey){document.querySelectorAll('#boardFilters label').forEach(x=>x.classList.remove('active'));if(!this.classList.contains('active'))this.classList.add('active');}
+    else{this.classList.toggle('active');syncAllButton();}
+  }
+  applyFilters();
+});l.classList.add('active');});
+syncAllButton();
+
+function syncAllButton(){const ab=document.querySelector('#boardFilters .all-btn'),bs=document.querySelectorAll('#boardFilters label:not(.all-btn)');ab.classList.toggle('active',Array.from(bs).every(l=>l.classList.contains('active')));}
+
+// ====== Sector Filter ======
+async function loadSectors(){
+  if(typeof _preloadSectors!=='undefined'&&_preloadSectors.length){allSectors=_preloadSectors;renderSectorCheckboxes();return;}
+  try{const r=await fetch('/api/v1/sectors');allSectors=await r.json();renderSectorCheckboxes();}catch(e){allSectors=[];renderSectorCheckboxes();}
+}
+function renderSectorCheckboxes(){
+  const c=document.getElementById('sectorCheckboxes');if(!c)return;
+  if(!allSectors||!allSectors.length){c.innerHTML='<span style="padding:8px;color:#999;">loading...</span>';return;}
+  c.innerHTML=allSectors.map(s=>`<label class="${selectedSectors.has(s.name)?'active':''}" data-sector="${s.name.replace(/"/g,'&quot;')}"><input type="checkbox">${s.name}<small style="color:inherit;opacity:.7;margin-left:2px;">${s.stock_count}</small></label>`).join('');
+  c.querySelectorAll('label').forEach(l=>l.addEventListener('click',function(e){e.preventDefault();this.classList.toggle('active');}));
+}
+function toggleSectorPanel(){
+  const p=document.getElementById('sectorPanel'),t=document.getElementById('sectorTrigger');if(!p||!t)return;
+  const opening=!p.classList.contains('show');
+  if(opening){renderSectorCheckboxes();const s=document.getElementById('sectorSearch');if(s)s.value='';filterSectorCheckboxes();}
+  p.classList.toggle('show',opening);t.classList.toggle('open',opening);
+}
+function applySectors(){selectedSectors=new Set();document.querySelectorAll('#sectorCheckboxes label.active').forEach(l=>selectedSectors.add(l.dataset.sector));updateSectorUI();document.getElementById('sectorPanel').classList.remove('show');document.getElementById('sectorTrigger').classList.remove('open');applyFilters();}
+function clearSectors(){selectedSectors.clear();document.querySelectorAll('#sectorCheckboxes label').forEach(l=>l.classList.remove('active'));updateSectorUI();document.getElementById('sectorPanel').classList.remove('show');document.getElementById('sectorTrigger').classList.remove('open');applyFilters();}
+function updateSectorUI(){
+  const t=document.getElementById('sectorTrigger'),tg=document.getElementById('sectorTags');
+  if(!selectedSectors.size){t.textContent='全部概念 ▾';tg.innerHTML='';}
+  else{t.textContent='已选 '+selectedSectors.size+' 个 ▾';const a=Array.from(selectedSectors).slice(0,5);tg.innerHTML=a.map(s=>`<span class="tag">${s}<span class="remove" onclick="event.stopPropagation();removeSector('${s.replace(/'/g,"\\'")}')">×</span></span>`).join('')+(selectedSectors.size>5?`<span class="tag">+${selectedSectors.size-5}</span>`:'');}
+}
+function removeSector(n){selectedSectors.delete(n);updateSectorUI();renderSectorCheckboxes();applyFilters();}
+function selectSectorFromChart(){if(!selectedStock||!selectedStock.sector)return;selectedSectors=new Set([selectedStock.sector]);updateSectorUI();renderSectorCheckboxes();applyFilters();}
+function filterSectorCheckboxes(){const q=(document.getElementById('sectorSearch')||{}).value||'';const c=document.getElementById('sectorCheckboxes');if(!c)return;c.querySelectorAll('label').forEach(l=>l.style.display=!q||(l.dataset.sector||'').toLowerCase().includes(q.toLowerCase())?'':'none');}
+document.addEventListener('click',e=>{const d=document.getElementById('sectorDropdown');if(d&&!d.contains(e.target)){document.getElementById('sectorPanel').classList.remove('show');document.getElementById('sectorTrigger').classList.remove('open');}});
+
+
+function renderMarginChart(m){
+  if(!m)return;
+  const fmt=v=>{if(v==null)return'--';const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'亿';if(a>=1e4)return(v/1e4).toFixed(0)+'万';return v.toFixed(0);};
+  document.getElementById('mPrice').textContent=m.price?m.price.toFixed(2):'--';
+  document.getElementById('mChgPct').textContent=m.change_pct!=null?m.change_pct.toFixed(2)+'%':'--';
+  document.getElementById('mTurnover').textContent=m.turnover!=null?m.turnover.toFixed(2)+'%':'--';
+  document.getElementById('mPE').textContent=m.pe!=null?m.pe.toFixed(2):'--';
+  document.getElementById('mTotalMv').textContent=fmt(m.total_mv);
+  document.getElementById('mCircMv').textContent=fmt(m.circ_mv);
+}
+
+// ====== Resize ======
+(function(){
+  let drag = null;
+
+  document.querySelectorAll('.chart-resizer').forEach(h => {
+    h.onmousedown = function(e) {
+      e.preventDefault();
+      const keys = this.dataset.resize.split('-');
+      const secA = document.querySelector(`[data-section="${keys[0]}"]`);
+      const secB = document.querySelector(`[data-section="${keys[1]}"]`);
+      if (!secA || !secB) return;
+
+      // 首次拖拽：将所有 section 从 flex 均分锁定为固定高度
+      document.querySelectorAll('.chart-section[data-section]').forEach(s => {
+        const h = s.offsetHeight;
+        s.style.setProperty('flex', 'none', 'important');
+        s.style.setProperty('min-height', h + 'px', 'important');
+        s.style.setProperty('max-height', h + 'px', 'important');
+      });
+
+      drag = {
+        a: secA, b: secB,
+        hA: secA.offsetHeight,
+        hB: secB.offsetHeight,
+        y: e.clientY,
+        handle: this,
+      };
+      this.classList.add('active');
+    };
+  });
+
+  document.onmousemove = function(e) {
+    if (!drag) return;
+    const dy = e.clientY - drag.y;
+    const hA = Math.max(60, drag.hA + dy);
+    const hB = Math.max(30, drag.hB - dy);
+    drag.a.style.setProperty('min-height', hA + 'px', 'important');
+    drag.a.style.setProperty('max-height', hA + 'px', 'important');
+    drag.b.style.setProperty('min-height', hB + 'px', 'important');
+    drag.b.style.setProperty('max-height', hB + 'px', 'important');
+    if (window._pc) { const el = document.getElementById('priceChartContainer'); if (el) window._pc.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }
+    if (window.flowChart) window.flowChart.resize();
+  };
+
+  document.onmouseup = function() {
+    if (!drag) return;
+    drag.handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    if (window._pc) { const el = document.getElementById('priceChartContainer'); if (el) window._pc.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }
+    if (window.flowChart) window.flowChart.resize();
+    drag = null;
+  };
+})();
+
+// ====== Init ======
+(async function(){await loadSectors();await loadStocks();})();
+</script>
+</body>
+</html>
