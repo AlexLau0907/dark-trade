@@ -154,12 +154,9 @@ def build_where_clause(
 # ====== 前端专用：轻量股票列表 ======
 
 @app.get(f"{API_PREFIX}/stocks/list")
+@app.get(f"{API_PREFIX}/stocks/list")
 def get_stocks_lightweight():
-    """
-    返回所有股票的最新数据（精简字段）+ 5/10/20日累计暗盘资金。
-    字段: stock_code, stock_name, sector, board_type, pinyin, sum_5d, sum_10d, sum_20d
-    默认按 sum_20d 降序排列。
-    """
+    """返回所有股票最新数据 + 当日资金 + 人气排名"""
     conn = get_connection()
     rows = conn.execute("""
         WITH latest AS (
@@ -167,53 +164,45 @@ def get_stocks_lightweight():
         ),
         ranked_dates AS (
             SELECT trade_date, ROW_NUMBER() OVER (ORDER BY trade_date DESC) AS rn
-            FROM (SELECT DISTINCT trade_date FROM stocks_daily WHERE trade_date <= (SELECT max_date FROM latest)) t
+            FROM (SELECT DISTINCT trade_date FROM stocks_daily WHERE trade_date BETWEEN (SELECT MIN(trade_date) FROM stocks_daily) AND (SELECT max_date FROM latest)) t
         ),
         stock_latest AS (
             SELECT DISTINCT stock_code, stock_name, sector, board_type, pinyin_initials
-            FROM stocks_daily
-            WHERE trade_date = (SELECT max_date FROM latest)
+            FROM stocks_daily WHERE trade_date BETWEEN (SELECT max_date FROM latest) AND (SELECT max_date FROM latest)
         ),
         sum_5 AS (
             SELECT stock_code, SUM(dark_pool_funds) AS sum_5d
-            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 5)
-            GROUP BY stock_code
+            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 5) GROUP BY stock_code
         ),
         sum_10 AS (
             SELECT stock_code, SUM(dark_pool_funds) AS sum_10d
-            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 10)
-            GROUP BY stock_code
+            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 10) GROUP BY stock_code
         ),
         sum_20 AS (
             SELECT stock_code, SUM(dark_pool_funds) AS sum_20d
-            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 20)
-            GROUP BY stock_code
+            FROM stocks_daily WHERE trade_date IN (SELECT trade_date FROM ranked_dates WHERE rn <= 20) GROUP BY stock_code
+        ),
+        daily AS (
+            SELECT stock_code, dark_pool_funds AS daily_flow
+            FROM stocks_daily WHERE trade_date BETWEEN (SELECT max_date FROM latest) AND (SELECT max_date FROM latest)
+        ),
+        pop AS (
+            SELECT stock_code, popularity_rank FROM popularity
+            WHERE trade_date = (SELECT MAX(trade_date) FROM popularity)
         )
-        SELECT
-            s.stock_code, s.stock_name, s.sector, s.board_type, s.pinyin_initials,
-            COALESCE(f5.sum_5d, 0)   AS sum_5d,
-            COALESCE(f10.sum_10d, 0) AS sum_10d,
-            COALESCE(f20.sum_20d, 0) AS sum_20d
+        SELECT s.stock_code, s.stock_name, s.sector, s.board_type, s.pinyin_initials,
+            COALESCE(f5.sum_5d, 0), COALESCE(f10.sum_10d, 0), COALESCE(f20.sum_20d, 0),
+            COALESCE(d.daily_flow, 0), p.popularity_rank
         FROM stock_latest s
-        LEFT JOIN sum_5  f5  ON s.stock_code = f5.stock_code
+        LEFT JOIN sum_5 f5 ON s.stock_code = f5.stock_code
         LEFT JOIN sum_10 f10 ON s.stock_code = f10.stock_code
         LEFT JOIN sum_20 f20 ON s.stock_code = f20.stock_code
+        LEFT JOIN daily d ON s.stock_code = d.stock_code
+        LEFT JOIN pop p ON s.stock_code = p.stock_code
         ORDER BY sum_20d DESC
     """).fetchall()
+    return [{"stock_code":r[0],"stock_name":r[1],"sector":r[2],"board_type":r[3],"pinyin":r[4] or "","sum_5d":r[5],"sum_10d":r[6],"sum_20d":r[7],"daily_flow":r[8],"popularity":r[9]} for r in rows]
 
-    return [
-        {
-            "stock_code": r[0],
-            "stock_name": r[1],
-            "sector": r[2],
-            "board_type": r[3],
-            "pinyin": r[4] or "",
-            "sum_5d": r[5],
-            "sum_10d": r[6],
-            "sum_20d": r[7],
-        }
-        for r in rows
-    ]
 
 
 # ====== 5.1 股票查询 ======
@@ -375,6 +364,93 @@ def get_stock_margin(code: str = Path(..., min_length=6, max_length=6)):
         }
     except Exception:
         return {}
+
+# ====== 人气数据 ======
+
+def _fetch_popularity() -> list[dict]:
+    """从东财获取人气排名数据"""
+    url = "https://data.eastmoney.com/dataapi/xuangu/list"
+    params = {
+        "st": "POPULARITY_RANK", "sr": "-1", "ps": "8000", "p": "1",
+        "sty": "SECUCODE,SECURITY_CODE,SECURITY_NAME_ABBR,NEW_PRICE,CHANGE_RATE,VOLUME_RATIO,HIGH_PRICE,LOW_PRICE,PRE_CLOSE_PRICE,VOLUME,DEAL_AMOUNT,TURNOVERRATE,POPULARITY_RANK",
+        "source": "SELECT_SECURITIES", "client": "WEB", "hyversion": "v2",
+    }
+    resp = requests.get(url, params=params, timeout=15, headers={
+        "User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/",
+    })
+    data = resp.json()
+    if data.get("result") and data["result"].get("data"):
+        return data["result"]["data"]
+    return []
+
+
+@app.get(f"{API_PREFIX}/popularity/status")
+def popularity_status():
+    """查询人气数据刷新状态"""
+    conn = get_connection()
+    last = conn.execute(
+        "SELECT refresh_time FROM popularity_refresh_log ORDER BY refresh_time DESC LIMIT 1"
+    ).fetchone()
+    count = conn.execute(
+        "SELECT COUNT(*) FROM popularity WHERE trade_date = (SELECT MAX(trade_date) FROM popularity)"
+    ).fetchone()[0]
+    can_refresh = True
+    if last:
+        from datetime import datetime, timedelta
+        ts = str(last[0])
+        if '.' in ts: ts = ts[:ts.index('.')]
+        last_time = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        if datetime.now() - last_time < timedelta(hours=1):
+            can_refresh = False
+    return {"can_refresh": can_refresh, "record_count": count, "last_refresh": str(last[0]) if last else None}
+
+
+@app.post(f"{API_PREFIX}/popularity/refresh")
+def refresh_popularity():
+    """刷新当日人气数据（限频1小时）"""
+    conn = get_connection()
+    from datetime import datetime, timedelta
+    last = conn.execute(
+        "SELECT refresh_time FROM popularity_refresh_log ORDER BY refresh_time DESC LIMIT 1"
+    ).fetchone()
+    if last:
+        ts = str(last[0])
+        if '.' in ts: ts = ts[:ts.index('.')]
+        last_time = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        if datetime.now() - last_time < timedelta(hours=1):
+            raise HTTPException(429, "请在一个小时后刷新人气数据")
+    raw = _fetch_popularity()
+    if not raw:
+        raise HTTPException(502, "获取人气数据失败")
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn.execute("DELETE FROM popularity WHERE trade_date = ?", [today])
+    def _safe_float(v):
+        try: return float(v) if v and v != '-' else None
+        except: return None
+    def _safe_int(v):
+        try: return int(v) if v and v != '-' else None
+        except: return None
+
+    rows = []
+    for r in raw:
+        rows.append([
+            r.get("SECURITY_CODE", ""), today,
+            _safe_int(r.get("POPULARITY_RANK")), _safe_float(r.get("NEW_PRICE")),
+            _safe_float(r.get("CHANGE_RATE")), _safe_float(r.get("VOLUME_RATIO")),
+            _safe_float(r.get("TURNOVERRATE")), _safe_float(r.get("VOLUME")),
+            _safe_float(r.get("DEAL_AMOUNT")),
+        ])
+    conn.executemany(
+        "INSERT INTO popularity (stock_code,trade_date,popularity_rank,new_price,change_rate,volume_ratio,turnover_rate,volume,deal_amount) VALUES (?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    cutoff = (datetime.now() - timedelta(days=21)).strftime("%Y-%m-%d")
+    conn.execute("DELETE FROM popularity WHERE trade_date < ?", [cutoff])
+    conn.execute("INSERT INTO popularity_refresh_log (refresh_time, record_count) VALUES (CURRENT_TIMESTAMP, ?)", [len(rows)])
+    conn.commit()
+    return {"success": True, "record_count": len(rows), "date": today}
+
+
 def get_sectors():
     conn = get_connection()
     rows = conn.execute("""

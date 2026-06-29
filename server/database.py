@@ -65,6 +65,30 @@ def init_database():
         )
     """)
 
+    # 人气数据表（仅保留最近21个交易日）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS popularity (
+            stock_code      VARCHAR(6) NOT NULL,
+            trade_date      DATE NOT NULL,
+            popularity_rank INTEGER,
+            new_price       DOUBLE,
+            change_rate     DOUBLE,
+            volume_ratio    DOUBLE,
+            turnover_rate   DOUBLE,
+            volume          DOUBLE,
+            deal_amount     DOUBLE,
+            PRIMARY KEY (trade_date, stock_code)
+        )
+    """)
+
+    # 人气刷新记录（限频1小时）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS popularity_refresh_log (
+            refresh_time    TIMESTAMP PRIMARY KEY,
+            record_count    INTEGER
+        )
+    """)
+
     for idx_sql in [
         "CREATE INDEX IF NOT EXISTS idx_code ON stocks_daily(stock_code)",
         "CREATE INDEX IF NOT EXISTS idx_sector ON stocks_daily(sector)",

@@ -73,7 +73,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
 .stock-count { font-size: 12px; color: #B08B6F; white-space: nowrap; }
 
 .main { display: flex; flex: 1; overflow: hidden; }
-.panel-left { width: 540px; min-width: 460px; background: #fff; border-right: 1px solid #E8D5C0; display: flex; flex-direction: column; }
+.panel-left { width: 660px; min-width: 560px; background: #fff; border-right: 1px solid #E8D5C0; display: flex; flex-direction: column; }
 .panel-left .title-bar { padding: 10px 16px; font-size: 12px; font-weight: 600; color: #8B6F5F; border-bottom: 1px solid #F0E0D0; background: #FFFAF5; display: flex; align-items: center; }
 .title-bar .scode { width: 85px; cursor: pointer; user-select: none; padding: 2px 4px; border-radius: 3px; }
 .title-bar .scode:hover { background: #F0E0D0; }
@@ -111,9 +111,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
 .chart-resizer::after { content: ''; width: 50px; height: 4px; background: #D4A574; border-radius: 2px; transition: all .15s; }
 .chart-resizer:hover, .chart-resizer.active { background: #FFF0E0; }
 .chart-resizer:hover::after, .chart-resizer.active::after { background: var(--h-primary); width: 70px; }
+.chart-resizer.fixed { cursor: default; height: 6px; margin: 0; background: var(--h-primary); border: none; }
+.chart-resizer.fixed::after { display: none; }
+.chart-resizer.fixed:hover { background: var(--h-primary); }
 .chart-section-title { font-size: 11px; font-weight: 600; color: #8B6F5F; padding: 5px 20px 0; flex-shrink: 0; }
 .chart-section-body { flex: 1; padding: 2px 16px 6px; position: relative; min-height: 0; }
 .chart-section-body canvas, .chart-section-body > div { width: 100% !important; height: 100% !important; }
+
+.toast-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 9999; display: none; align-items: center; justify-content: center; }
+.toast-overlay.show { display: flex; }
+.toast-box { background: #fff; border: 2px solid var(--h-primary); border-radius: 12px; padding: 24px 32px; max-width: 400px; text-align: center; box-shadow: 0 8px 32px rgba(232,93,4,.3); }
+.toast-box .toast-msg { font-size: 15px; color: var(--h-primary); font-weight: 600; margin-bottom: 16px; }
+.toast-box .toast-btn { padding: 8px 24px; background: var(--h-primary); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+.btn-refresh { display: none; }
+.metric-pop { cursor: pointer; transition: all .2s; background: linear-gradient(135deg, #FFF3E0, #FFE0B2) !important; border-color: #FF7B00 !important; flex-direction: row !important; align-items: center !important; gap: 8px !important; }
+.metric-pop:hover { background: linear-gradient(135deg, #FFE0B2, #FFCC80) !important; box-shadow: 0 2px 12px rgba(255,123,0,.35); }
+.metric-pop .metric-label { color: #E65100 !important; font-weight: 700 !important; }
+.metric-pop .metric-value { color: #FF6D00 !important; font-size: 24pt !important; font-weight: 800 !important; margin-left: auto !important; }
 .chart-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,.7); z-index: 10; }
 .chart-loading.show { display: flex; }
 .chart-loading .spinner { width: 32px; height: 32px; border: 3px solid #F0E0D0; border-top-color: var(--h-primary); border-radius: 50%; animation: spin .8s linear infinite; margin-right: 12px; }
@@ -180,9 +194,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
     <div class="title-bar" id="titleBar">
       <span class="scode" data-sort="stock_code">股票代码</span>
       <span class="sname" data-sort="stock_name">股票名称</span>
-      <span class="sflow sorted" data-sort="sum_20d">20日累计 ▼</span>
-      <span class="sflow" data-sort="sum_10d">10日累计</span>
+      <span class="sflow" data-sort="daily_flow">当日累计</span>
       <span class="sflow" data-sort="sum_5d">5日累计</span>
+      <span class="sflow" data-sort="sum_10d">10日累计</span>
+      <span class="sflow sorted" data-sort="sum_20d">20日累计 ▼</span>
+      <span class="sflow" data-sort="popularity">人气</span>
     </div>
     <div class="stock-list" id="stockList"></div>
   </div>
@@ -198,10 +214,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
       </div>
     </div>
     <div class="charts-stack" id="chartsStack">
+      <div class="chart-section" data-section="margin" style="flex:0 0 100px;">
+        <div class="chart-section-title">📊 行情数据</div>
+        <div class="margin-metrics" id="marginMetrics">
+          <div class="metric-card" id="mChgPctCard"><span class="metric-label">涨跌幅</span><span class="metric-value" id="mChgPct">--</span></div>
+          <div class="metric-card"><span class="metric-label">最新价</span><span class="metric-value" id="mPrice">--</span></div>
+          <div class="metric-card"><span class="metric-label">换手率</span><span class="metric-value" id="mTurnover">--</span></div>
+          <div class="metric-card"><span class="metric-label">市盈率</span><span class="metric-value" id="mPE">--</span></div>
+          <div class="metric-card"><span class="metric-label">总市值</span><span class="metric-value" id="mTotalMv">--</span></div>
+          <div class="metric-card"><span class="metric-label">流通市值</span><span class="metric-value" id="mCircMv">--</span></div>
+          <div class="metric-card metric-pop" id="popCard" onclick="refreshPopularity()" title="点击刷新当日人气数据"><span class="metric-label">人气值</span><span class="metric-value" id="mPop">--</span></div>
+        </div>
+      </div>
+      <div class="chart-resizer fixed"></div>
       <div class="chart-section" data-section="price">
         <div class="chart-section-title">📈 价格走势</div>
         <div class="chart-section-body"><div class="chart-loading" id="loadPrice"><div class="spinner"></div><span class="text">数据加载中...</span></div><div id="priceChartContainer" style="width:100%;height:100%;"></div></div>
-      </div>
       <div class="chart-resizer" data-resize="price-flow"></div>
       <div class="chart-section" data-section="flow">
         <div class="chart-section-title">💰 资金流向</div>
@@ -213,19 +241,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
           <span><span class="line-dot" style="background:#4CAF50;"></span>10日累计</span>
           <span><span class="line-dot" style="background:#E91E63;"></span>20日累计</span>
         </div>
-      <div class="chart-resizer" data-resize="flow-margin"></div>
-      <div class="chart-section" data-section="margin" style="flex:0 0 auto;">
-        <div class="chart-section-title">📊 行情数据</div>
-        <div class="margin-metrics" id="marginMetrics">
-          <div class="metric-card"><span class="metric-label">最新价</span><span class="metric-value" id="mPrice">--</span></div>
-          <div class="metric-card"><span class="metric-label">涨跌幅</span><span class="metric-value" id="mChgPct">--</span></div>
-          <div class="metric-card"><span class="metric-label">换手率</span><span class="metric-value" id="mTurnover">--</span></div>
-          <div class="metric-card"><span class="metric-label">市盈率</span><span class="metric-value" id="mPE">--</span></div>
-          <div class="metric-card"><span class="metric-label">总市值</span><span class="metric-value" id="mTotalMv">--</span></div>
-          <div class="metric-card"><span class="metric-label">流通市值</span><span class="metric-value" id="mCircMv">--</span></div>
-        </div>
       </div>
     </div>
+  </div>
+</div>
+
+
+<div class="toast-overlay" id="toastOverlay" onclick="document.getElementById('toastOverlay').classList.remove('show')">
+  <div class="toast-box" onclick="event.stopPropagation()">
+    <div class="toast-msg" id="toastMsg">请在一个小时后刷新人气数据</div>
+    <button class="toast-btn" onclick="document.getElementById('toastOverlay').classList.remove('show')">确定</button>
   </div>
 </div>
 
@@ -271,13 +296,39 @@ function applyFilters(){
   document.getElementById('stockCount').textContent='共 '+filteredStocks.length+' 只';
 }
 
+async function refreshPopularity(){
+  const card=document.getElementById('popCard');
+  try{
+    card.style.opacity='0.6';
+    const r=await fetch('/api/v1/popularity/refresh',{method:'POST'});
+    if(!r.ok){
+      document.getElementById('toastMsg').textContent='请在一个小时后刷新人气数据';
+      document.getElementById('toastOverlay').classList.add('show');
+      card.style.opacity='1';return;
+    }
+    const d2=await(await fetch('/api/v1/stocks/list')).json();
+    allStocks=d2;applyFilters();
+    // Update current stock popularity
+    if(selectedStock){
+      const s=d2.find(x=>x.stock_code===selectedStock.stock_code);
+      if(s) document.getElementById('mPop').textContent=s.popularity||'--';
+    }
+  }catch(e){}
+  card.style.opacity='1';
+}
+(async function(){
+  try{const r=await fetch('/api/v1/popularity/status');const s=await r.json();
+  document.getElementById('mPop').textContent=s.record_count>0?s.record_count+'只':'--';
+  }catch(e){}
+})();
+
 function formatFlow(v){if(v==null)return'--';const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'亿';if(a>=1e4)return(v/1e4).toFixed(1)+'万';return v.toFixed(0);}
 function flowClass(v){if(v==null)return'';return v>=0?' pos':' neg';}
 
 function sortStocks(stocks){
   return [...stocks].sort((a,b)=>{
     let va=a[sortField], vb=b[sortField];
-    if(sortField.startsWith('sum_'))return((va||0)-(vb||0))*sortOrder;
+    if(sortField.startsWith('sum_')||sortField==='daily_flow')return((va||0)-(vb||0))*sortOrder;if(sortField==='popularity'){const p=(a,b)=>(a==null?1e9:a)-(b==null?1e9:b);return p(va,vb)*sortOrder;}
     va=(va||'').toString(); vb=(vb||'').toString();
     return va.localeCompare(vb,'zh-CN')*sortOrder;
   });
@@ -294,7 +345,7 @@ function renderStockList(){
   const total=Math.ceil(filteredStocks.length/PAGE_SIZE);
   if(currentPage>total)currentPage=total;
   const start=(currentPage-1)*PAGE_SIZE, items=filteredStocks.slice(start,start+PAGE_SIZE);
-  let h=items.map(s=>`<div class="row${selectedStock&&selectedStock.stock_code===s.stock_code?' selected':''}" data-code="${s.stock_code}" onclick="selectStock('${s.stock_code}')"><span class="scode">${s.stock_code}</span><span class="sname" title="${s.stock_name||''}">${s.stock_name||''}</span><span class="sflow${flowClass(s.sum_20d)}">${formatFlow(s.sum_20d)}</span><span class="sflow${flowClass(s.sum_10d)}">${formatFlow(s.sum_10d)}</span><span class="sflow${flowClass(s.sum_5d)}">${formatFlow(s.sum_5d)}</span></div>`).join('');
+  let h=items.map(s=>`<div class="row${selectedStock&&selectedStock.stock_code===s.stock_code?' selected':''}" data-code="${s.stock_code}" onclick="selectStock('${s.stock_code}')"><span class="scode">${s.stock_code}</span><span class="sname" title="${s.stock_name||''}">${s.stock_name||''}</span><span class="sflow${flowClass(s.daily_flow)}">${formatFlow(s.daily_flow)}</span><span class="sflow${flowClass(s.sum_5d)}">${formatFlow(s.sum_5d)}</span><span class="sflow${flowClass(s.sum_10d)}">${formatFlow(s.sum_10d)}</span><span class="sflow${flowClass(s.sum_20d)}">${formatFlow(s.sum_20d)}</span><span class="sflow${s.popularity?' pop':''}">${s.popularity||'-'}</span></div>`).join('');
   if(total>1){
     h+=`<div class="pager"><button onclick="goPage(1)" ${currentPage===1?'disabled':''}>«</button><button onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button><span>${currentPage}/${total}</span><button onclick="goPage(${currentPage+1})" ${currentPage===total?'disabled':''}>›</button><button onclick="goPage(${total})" ${currentPage===total?'disabled':''}>»</button></div>`;
   }
@@ -395,7 +446,7 @@ document.querySelector('.panel-right').addEventListener('wheel',e=>{
   if(next!==idx){e.preventDefault();selectStock(filteredStocks[next].stock_code);}
 },{passive:false});
 
-const HL={stock_code:'股票代码',stock_name:'股票名称',sum_5d:'5日累计',sum_10d:'10日累计',sum_20d:'20日累计'};
+const HL={stock_code:'股票代码',stock_name:'股票名称',daily_flow:'当日资金',sum_5d:'5日累计',sum_10d:'10日累计',sum_20d:'20日累计',popularity:'人气'};
 document.querySelectorAll('.title-bar [data-sort]').forEach(h=>{h.addEventListener('dblclick',function(){
   const f=this.dataset.sort;
   if(sortField===f)sortOrder=-sortOrder;else{sortField=f;sortOrder=(f==='stock_code'||f==='stock_name')?1:-1;}
@@ -451,12 +502,14 @@ document.addEventListener('click',e=>{const d=document.getElementById('sectorDro
 function renderMarginChart(m){
   if(!m)return;
   const fmt=v=>{if(v==null)return'--';const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'亿';if(a>=1e4)return(v/1e4).toFixed(0)+'万';return v.toFixed(0);};
+  const color=v=>{if(v==null||v===0)return'#5D4037';return v>0?'#e63946':'#2E7D32';};
   document.getElementById('mPrice').textContent=m.price?m.price.toFixed(2):'--';
-  document.getElementById('mChgPct').textContent=m.change_pct!=null?m.change_pct.toFixed(2)+'%':'--';
+  const pct=m.change_pct;const ce=document.getElementById('mChgPct');ce.textContent=pct!=null?pct.toFixed(2)+'%':'--';const cc=color(pct);ce.style.color=cc;const card=document.getElementById('mChgPctCard');card.style.background=pct!=null&&pct!==0?(pct>0?'rgba(230,57,70,.12)':'rgba(46,125,50,.12)'):'#FFFAF5';
   document.getElementById('mTurnover').textContent=m.turnover!=null?m.turnover.toFixed(2)+'%':'--';
   document.getElementById('mPE').textContent=m.pe!=null?m.pe.toFixed(2):'--';
   document.getElementById('mTotalMv').textContent=fmt(m.total_mv);
   document.getElementById('mCircMv').textContent=fmt(m.circ_mv);
+  if(selectedStock&&selectedStock.popularity!=null)document.getElementById('mPop').textContent=selectedStock.popularity;
 }
 
 // ====== Resize ======
@@ -493,14 +546,13 @@ function renderMarginChart(m){
   document.onmousemove = function(e) {
     if (!drag) return;
     const dy = e.clientY - drag.y;
-    const hA = Math.max(60, drag.hA + dy);
+    const fixedTop = drag.a.dataset.section === 'margin';
     const hB = Math.max(30, drag.hB - dy);
-    drag.a.style.setProperty('min-height', hA + 'px', 'important');
-    drag.a.style.setProperty('max-height', hA + 'px', 'important');
-    drag.b.style.setProperty('min-height', hB + 'px', 'important');
-    drag.b.style.setProperty('max-height', hB + 'px', 'important');
+    if (!fixedTop) { const hA = Math.max(60, drag.hA + dy); drag.a.style.setProperty('min-height', hA+'px', 'important'); drag.a.style.setProperty('max-height', hA+'px', 'important'); }
+    drag.b.style.setProperty('min-height', hB+'px', 'important');
+    drag.b.style.setProperty('max-height', hB+'px', 'important');
     if (window._pc) { const el = document.getElementById('priceChartContainer'); if (el) window._pc.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }
-    if (window.flowChart) window.flowChart.resize();
+    if (flowChart) flowChart.resize();
   };
 
   document.onmouseup = function() {
@@ -509,7 +561,7 @@ function renderMarginChart(m){
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     if (window._pc) { const el = document.getElementById('priceChartContainer'); if (el) window._pc.applyOptions({ width: el.clientWidth, height: el.clientHeight }); }
-    if (window.flowChart) window.flowChart.resize();
+    if (flowChart) flowChart.resize();
     drag = null;
   };
 })();
