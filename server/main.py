@@ -6,6 +6,8 @@ import json
 import math
 import os
 import re
+import asyncio
+from datetime import datetime, timedelta
 import requests
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, HTTPException, Path
@@ -41,7 +43,25 @@ async def lifespan(app: FastAPI):
     print(f"[Startup] 前端页面: http://{HOST}:{PORT}")
     print(f"[Startup] Swagger:  http://{HOST}:{PORT}/docs")
     print("-" * 60)
+
+    # 人气数据定时刷新: 每天00:30起每小时刷新一次
+    last_hour = -1
+    async def popularity_scheduler():
+        nonlocal last_hour
+        while True:
+            await asyncio.sleep(30)
+            now = datetime.now()
+            if now.minute == 30 and now.hour != last_hour:
+                last_hour = now.hour
+                try:
+                    print(f"[Scheduler] {now.strftime('%H:%M')} 刷新人气...")
+                    _do_refresh_popularity()
+                except Exception as e:
+                    print(f"[Scheduler] 失败: {e}")
+
+    task = asyncio.create_task(popularity_scheduler())
     yield
+    task.cancel()
     close_connection()
     print("[Shutdown] 服务已关闭")
 
@@ -405,9 +425,31 @@ def popularity_status():
     return {"can_refresh": can_refresh, "record_count": count, "last_refresh": str(last[0]) if last else None}
 
 
+def _do_refresh_popularity():
+    """执行人气数据刷新（内部调用，不检查限频）"""
+    conn = get_connection()
+    raw = _fetch_popularity()
+    if not raw:
+        return {"success": False, "record_count": 0}
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn.execute("DELETE FROM popularity WHERE trade_date = ?", [today])
+    def _sf(v):
+        try: return float(v) if v and v != '-' else None
+        except: return None
+    def _si(v):
+        try: return int(v) if v and v != '-' else None
+        except: return None
+    rows = [[r.get("SECURITY_CODE",""), today, _si(r.get("POPULARITY_RANK")), _sf(r.get("NEW_PRICE")), _sf(r.get("CHANGE_RATE")), _sf(r.get("VOLUME_RATIO")), _sf(r.get("TURNOVERRATE")), _sf(r.get("VOLUME")), _sf(r.get("DEAL_AMOUNT"))] for r in raw]
+    conn.executemany("INSERT INTO popularity (stock_code,trade_date,popularity_rank,new_price,change_rate,volume_ratio,turnover_rate,volume,deal_amount) VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    conn.execute("DELETE FROM popularity WHERE trade_date < ?", [(datetime.now() - timedelta(days=21)).strftime("%Y-%m-%d")])
+    conn.execute("INSERT INTO popularity_refresh_log (refresh_time, record_count) VALUES (CURRENT_TIMESTAMP, ?)", [len(rows)])
+    conn.commit()
+    return {"success": True, "record_count": len(rows), "date": today}
+
+
 @app.post(f"{API_PREFIX}/popularity/refresh")
 def refresh_popularity():
-    """刷新当日人气数据（限频1小时）"""
+    """刷新当日人气数据（限频1小时，供前端调用）"""
     conn = get_connection()
     from datetime import datetime, timedelta
     last = conn.execute(
