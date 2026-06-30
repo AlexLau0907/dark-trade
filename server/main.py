@@ -103,8 +103,8 @@ async def root():
     html = open(index_path, "r", encoding="utf-8").read()
     # 在 <script> 开头注入数据
     html = html.replace(
-        "// ====== 概念筛选 ======",
-        f"// ====== 概念筛选 ======\nlet _preloadSectors = {sectors_json};",
+        "// ====== Sector Filter ======",
+        f"// ====== Sector Filter ======\nlet _preloadSectors = {sectors_json};",
     )
 
     return HTMLResponse(content=html, status_code=200)
@@ -162,10 +162,10 @@ def build_where_clause(
         conditions.append("board_type = ?")
         params.append(board_type)
     if trade_date:
-        conditions.append("trade_date = ?")
-        params.append(trade_date)
+        conditions.append("trade_date BETWEEN ? AND ?")
+        params.extend([trade_date, trade_date])
     else:
-        conditions.append("trade_date = (SELECT MAX(trade_date) FROM stocks_daily)")
+        conditions.append("trade_date BETWEEN (SELECT MAX(trade_date) FROM stocks_daily) AND (SELECT MAX(trade_date) FROM stocks_daily)")
 
     where = " WHERE " + " AND ".join(conditions)
     return where, params
@@ -268,9 +268,8 @@ def get_stocks(
 def get_stock_detail(code: str = Path(..., min_length=6, max_length=6)):
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM stocks_daily WHERE stock_code = ? "
-        "AND trade_date = (SELECT MAX(trade_date) FROM stocks_daily) LIMIT 1",
-        [code],
+        f"SELECT * FROM stocks_daily WHERE stock_code BETWEEN '{code}' AND '{code}' "
+        f"AND trade_date BETWEEN (SELECT MAX(trade_date) FROM stocks_daily) AND (SELECT MAX(trade_date) FROM stocks_daily) LIMIT 1",
     ).fetchone()
     if not row:
         raise HTTPException(404, f"未找到股票: {code}")
@@ -284,8 +283,7 @@ def get_stock_history(code: str = Path(..., min_length=6, max_length=6)):
     rows = conn.execute(
         "SELECT trade_date, dark_pool_funds, light_pool_funds, main_net_inflow, "
         "dark_pool_activity, latest_score, score_change_pct, sector, ranking "
-        "FROM stocks_daily WHERE stock_code = ? ORDER BY trade_date ASC",
-        [code],
+        f"FROM stocks_daily WHERE stock_code BETWEEN '{code}' AND '{code}' ORDER BY trade_date ASC",
     ).fetchall()
     return [
         StockHistoryItem(
@@ -530,10 +528,10 @@ def get_sector_stocks(
     conditions = ["sector = ?"]
     params = [name]
     if trade_date:
-        conditions.append("trade_date = ?")
-        params.append(trade_date)
+        conditions.append("trade_date BETWEEN ? AND ?")
+        params.extend([trade_date, trade_date])
     else:
-        conditions.append("trade_date = (SELECT MAX(trade_date) FROM stocks_daily)")
+        conditions.append("trade_date BETWEEN (SELECT MAX(trade_date) FROM stocks_daily) AND (SELECT MAX(trade_date) FROM stocks_daily)")
     if board_type:
         conditions.append("board_type = ?")
         params.append(board_type)

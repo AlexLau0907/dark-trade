@@ -127,7 +127,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
 .metric-pop { cursor: pointer; transition: all .2s; background: linear-gradient(135deg, #FFF3E0, #FFE0B2) !important; border-color: #FF7B00 !important; flex-direction: row !important; align-items: center !important; gap: 8px !important; }
 .metric-pop:hover { background: linear-gradient(135deg, #FFE0B2, #FFCC80) !important; box-shadow: 0 2px 12px rgba(255,123,0,.35); }
 .metric-pop .metric-label { color: #E65100 !important; font-weight: 700 !important; }
-.metric-pop .metric-value { color: #FF6D00 !important; font-size: 24pt !important; font-weight: 800 !important; margin-left: auto !important; }
+.metric-pop .metric-value { color: #FF6D00 !important; font-size: 29pt !important; font-weight: 800 !important; margin-left: auto !important; }
 .chart-loading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,.7); z-index: 10; }
 .chart-loading.show { display: flex; }
 .chart-loading .spinner { width: 32px; height: 32px; border: 3px solid #F0E0D0; border-top-color: var(--h-primary); border-radius: 50%; animation: spin .8s linear infinite; margin-right: 12px; }
@@ -137,8 +137,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', sans-s
 .margin-section { flex: 0 0 auto !important; }
 .margin-metrics { display: flex; gap: 12px; padding: 6px 20px 10px; flex-wrap: wrap; }
 .metric-card { background: #FFFAF5; border: 1px solid #F0E0D0; border-radius: 8px; padding: 7px 16px; min-width: 100px; display: flex; flex-direction: column; gap: 1px; }
-.metric-card .metric-label { font-size: 10px; color: #8B6F5F; }
-.metric-card .metric-value { font-size: 15px; font-weight: 700; color: #5D4037; }
+.metric-card .metric-label { font-size: 15px; color: #8B6F5F; }
+.metric-card .metric-value { font-size: 20px; font-weight: 700; color: #5D4037; }
 
 .legend { display: flex; gap: 16px; font-size: 11px; color: #8B6F5F; padding: 0 20px 6px; flex-wrap: wrap; }
 .legend span { display: flex; align-items: center; gap: 5px; }
@@ -502,9 +502,9 @@ document.addEventListener('click',e=>{const d=document.getElementById('sectorDro
 function renderMarginChart(m){
   if(!m)return;
   const fmt=v=>{if(v==null)return'--';const a=Math.abs(v);if(a>=1e8)return(v/1e8).toFixed(2)+'亿';if(a>=1e4)return(v/1e4).toFixed(0)+'万';return v.toFixed(0);};
-  const color=v=>{if(v==null||v===0)return'#5D4037';return v>0?'#e63946':'#2E7D32';};
+  const color=v=>{if(v==null||v===0)return'#616161';return v>0?'rgb(250,40,40)':'rgb(27,194,132)';};
   document.getElementById('mPrice').textContent=m.price?m.price.toFixed(2):'--';
-  const pct=m.change_pct;const ce=document.getElementById('mChgPct');ce.textContent=pct!=null?pct.toFixed(2)+'%':'--';const cc=color(pct);ce.style.color=cc;const card=document.getElementById('mChgPctCard');card.style.background=pct!=null&&pct!==0?(pct>0?'rgba(230,57,70,.12)':'rgba(46,125,50,.12)'):'#FFFAF5';
+  const pct=m.change_pct;const ce=document.getElementById('mChgPct');ce.textContent=pct!=null?pct.toFixed(2)+'%':'--';const cc=color(pct);ce.style.color=cc;
   document.getElementById('mTurnover').textContent=m.turnover!=null?m.turnover.toFixed(2)+'%':'--';
   document.getElementById('mPE').textContent=m.pe!=null?m.pe.toFixed(2):'--';
   document.getElementById('mTotalMv').textContent=fmt(m.total_mv);
